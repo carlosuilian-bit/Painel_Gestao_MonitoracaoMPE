@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from html import escape
 from http import HTTPStatus
 import urllib.error
-import uuid
 
 import streamlit as st
 
@@ -17,21 +16,18 @@ SOURCE_SLOTS = (
         "label": "Link Principal",
         "placeholder": "Cole o link principal da analise",
         "help": "Essa fonte define o tipo de monitoracao e a base principal da analise.",
-        "required": True,
     },
     {
         "slot": "additional-1",
         "label": "Link Adicional 1",
         "placeholder": "Cole um link adicional",
         "help": "Use para vincular a aba de Medicao ou outra planilha complementar.",
-        "required": False,
     },
     {
         "slot": "additional-2",
         "label": "Link Adicional 2",
         "placeholder": "Cole um segundo link adicional",
         "help": "Opcional. Pode ser usado para uma segunda fonte complementar.",
-        "required": False,
     },
 )
 
@@ -69,10 +65,6 @@ def inject_styles() -> None:
           font-weight: 700;
           padding-top: 0.35rem;
         }
-        .pg-meta {
-          color: #4f5b56;
-          font-size: 0.9rem;
-        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -81,13 +73,13 @@ def inject_styles() -> None:
 
 def initialize_state() -> None:
     defaults = {
-        "analyses": [],
-        "dashboard_cache": {},
-        "selected_analysis_id": None,
         "selected_drilldown_key": None,
         "draft_previews": {},
         "draft_errors": {},
-        "reset_form_inputs": False,
+        "current_sources": [],
+        "current_dashboard": None,
+        "current_dashboard_error": None,
+        "current_dashboard_loaded_at": None,
         "flash": None,
     }
     for key, value in defaults.items():
@@ -95,9 +87,9 @@ def initialize_state() -> None:
             st.session_state[key] = value
 
     for slot in SOURCE_SLOTS:
-        key = input_key(slot["slot"])
-        if key not in st.session_state:
-            st.session_state[key] = ""
+        widget_key = input_key(slot["slot"])
+        if widget_key not in st.session_state:
+            st.session_state[widget_key] = ""
 
 
 def render_flash() -> None:
@@ -113,18 +105,6 @@ def render_flash() -> None:
         st.warning(message)
     else:
         st.error(message)
-
-
-def format_timestamp(value: str) -> str:
-    if not value:
-        return "Data nao informada"
-
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return value
-
-    return parsed.astimezone().strftime("%d/%m/%Y %H:%M")
 
 
 def render_badges(values: list[str], empty_label: str, container: object | None = None) -> None:
@@ -211,7 +191,7 @@ def validate_previews(
 
     missing_slots = [slot["label"] for slot in SOURCE_SLOTS if urls_by_slot.get(slot["slot"]) and slot["slot"] not in previews]
     if missing_slots:
-        return False, f"Confirme todas as fontes preenchidas antes de salvar. Pendente: {missing_slots[0]}.", "error"
+        return False, f"Confirme todas as fontes preenchidas antes de gerar a analise. Pendente: {missing_slots[0]}.", "error"
 
     if primary_preview["monitoringType"]["id"] == "sinalizacao_vertical":
         has_measurement = any(
@@ -222,14 +202,13 @@ def validate_previews(
         if not has_measurement:
             return False, "Para Sinalizacao Vertical, adicione tambem uma fonte do tipo Medicao.", "error"
 
-    return True, "Todas as fontes foram confirmadas. Voce ja pode salvar a analise.", "success"
+    return True, "Todas as fontes foram confirmadas. Voce ja pode gerar a analise.", "success"
 
 
-def build_analysis_record(
+def build_sources_payload(
     urls_by_slot: dict[str, str],
     previews: dict[str, dict[str, object]],
-) -> dict[str, object]:
-    primary_preview = previews["primary"]
+) -> list[dict[str, object]]:
     sources = []
     for slot in SOURCE_SLOTS:
         slot_name = slot["slot"]
@@ -250,46 +229,10 @@ def build_analysis_record(
                 "rowCount": preview["rowCount"],
             }
         )
-
-    return {
-        "id": uuid.uuid4().hex,
-        "createdAt": datetime.now(timezone.utc).isoformat(),
-        "databaseName": primary_preview["databaseName"],
-        "monitoringId": primary_preview["monitoringType"]["id"],
-        "monitoringLabel": primary_preview["monitoringType"]["label"],
-        "roads": primary_preview["roads"],
-        "sources": sources,
-    }
+    return sources
 
 
-def clear_draft() -> None:
-    st.session_state["draft_previews"] = {}
-    st.session_state["draft_errors"] = {}
-    st.session_state["reset_form_inputs"] = True
-
-
-def apply_pending_form_reset() -> None:
-    if not st.session_state.get("reset_form_inputs"):
-        return
-
-    for slot in SOURCE_SLOTS:
-        st.session_state.pop(input_key(slot["slot"]), None)
-    st.session_state["reset_form_inputs"] = False
-
-
-def get_selected_analysis() -> dict[str, object] | None:
-    analysis_id = st.session_state.get("selected_analysis_id")
-    if not analysis_id:
-        return None
-    return next((analysis for analysis in st.session_state["analyses"] if analysis["id"] == analysis_id), None)
-
-
-def load_dashboard_record(analysis: dict[str, object], force_refresh: bool = False) -> dict[str, object]:
-    analysis_id = str(analysis["id"])
-    cache = st.session_state["dashboard_cache"]
-    if not force_refresh and analysis_id in cache:
-        return cache[analysis_id]
-
+def load_dashboard_data(sources: list[dict[str, object]]) -> None:
     payload = {
         "sources": [
             {
@@ -297,26 +240,34 @@ def load_dashboard_record(analysis: dict[str, object], force_refresh: bool = Fal
                 "isPrimary": bool(source.get("isPrimary")),
                 "sheetUrl": source.get("sheetUrl", ""),
             }
-            for source in analysis.get("sources", [])
+            for source in sources
         ]
     }
+
+    st.session_state["current_sources"] = sources
+    st.session_state["selected_drilldown_key"] = None
 
     try:
         with st.spinner("Montando dashboard..."):
             data = build_dashboard(payload)
-        cache[analysis_id] = {
-            "data": data,
-            "error": None,
-            "loadedAt": datetime.now().strftime("%H:%M"),
-        }
+        st.session_state["current_dashboard"] = data
+        st.session_state["current_dashboard_error"] = None
+        st.session_state["current_dashboard_loaded_at"] = datetime.now().strftime("%H:%M")
     except Exception as exc:  # noqa: BLE001
-        cache[analysis_id] = {
-            "data": None,
-            "error": describe_exception(exc, "Ocorreu um erro interno ao montar o dashboard."),
-            "loadedAt": None,
-        }
+        st.session_state["current_dashboard"] = None
+        st.session_state["current_dashboard_error"] = describe_exception(
+            exc,
+            "Ocorreu um erro interno ao montar o dashboard.",
+        )
+        st.session_state["current_dashboard_loaded_at"] = None
 
-    return cache[analysis_id]
+
+def clear_current_dashboard() -> None:
+    st.session_state["current_sources"] = []
+    st.session_state["current_dashboard"] = None
+    st.session_state["current_dashboard_error"] = None
+    st.session_state["current_dashboard_loaded_at"] = None
+    st.session_state["selected_drilldown_key"] = None
 
 
 def build_section_meta(section: dict[str, object]) -> str:
@@ -472,9 +423,8 @@ def render_source_preview_blocks() -> None:
 
 
 def render_analysis_form() -> None:
-    apply_pending_form_reset()
-    st.subheader("Cadastrar monitoracao")
-    st.caption("Para Sinalizacao Vertical, informe o Link Principal e pelo menos uma fonte do tipo Medicao.")
+    st.subheader("Gerar analise")
+    st.caption("Preencha os links, valide se quiser, e clique em Gerar Analise para montar o dashboard atual.")
 
     feedback: tuple[str, str] | None = None
 
@@ -487,14 +437,16 @@ def render_analysis_form() -> None:
                 help=slot["help"],
             )
 
-        button_col, save_col = st.columns(2)
-        validate_clicked = button_col.form_submit_button("Validar fontes", use_container_width=True)
-        save_clicked = save_col.form_submit_button("Salvar analise", type="primary", use_container_width=True)
+        validate_col, generate_col = st.columns(2)
+        validate_clicked = validate_col.form_submit_button("Validar fontes", use_container_width=True)
+        generate_clicked = generate_col.form_submit_button("Gerar Analise", type="primary", use_container_width=True)
 
-    if validate_clicked or save_clicked:
+    if validate_clicked or generate_clicked:
         urls_by_slot = collect_source_urls()
         error_message = validate_urls(urls_by_slot)
         if error_message:
+            if generate_clicked:
+                clear_current_dashboard()
             st.session_state["draft_previews"] = {}
             st.session_state["draft_errors"] = {}
             feedback = ("error", error_message)
@@ -504,20 +456,18 @@ def render_analysis_form() -> None:
 
             st.session_state["draft_previews"] = previews
             st.session_state["draft_errors"] = errors
-            can_save, message, tone = validate_previews(urls_by_slot, previews, errors)
+            can_generate, message, tone = validate_previews(urls_by_slot, previews, errors)
             feedback = (tone, message)
 
-            if save_clicked and can_save:
-                analysis = build_analysis_record(urls_by_slot, previews)
-                st.session_state["analyses"].insert(0, analysis)
-                st.session_state["selected_analysis_id"] = analysis["id"]
-                st.session_state["selected_drilldown_key"] = None
-                clear_draft()
-                st.session_state["flash"] = {
-                    "tone": "success",
-                    "message": "Analise salva e pronta para abrir no dashboard.",
-                }
-                st.rerun()
+            if generate_clicked and can_generate:
+                sources = build_sources_payload(urls_by_slot, previews)
+                load_dashboard_data(sources)
+                if st.session_state.get("current_dashboard_error"):
+                    feedback = ("error", str(st.session_state["current_dashboard_error"]))
+                else:
+                    feedback = ("success", "Analise gerada com sucesso. O dashboard abaixo usa apenas os links informados nesta sessao.")
+            elif generate_clicked:
+                clear_current_dashboard()
 
     if feedback:
         tone, message = feedback
@@ -527,43 +477,6 @@ def render_analysis_form() -> None:
             st.error(message)
 
     render_source_preview_blocks()
-
-
-def render_analyses_list() -> None:
-    st.subheader("Analises cadastradas")
-    analyses = st.session_state["analyses"]
-    if not analyses:
-        st.info("Nenhuma analise cadastrada nesta sessao.")
-        return
-
-    for analysis in analyses:
-        with st.container(border=True):
-            info_col, open_col, delete_col = st.columns([6, 1.2, 1.2])
-            info_col.markdown(f"**{analysis.get('databaseName', 'Analise sem nome')}**")
-            info_col.caption(f"{analysis.get('monitoringLabel', 'Monitoracao')} | {format_timestamp(str(analysis.get('createdAt', '')))}")
-            render_badges(analysis.get("roads", []), "Sem rodovias", info_col)
-            source_labels = [
-                f"{source.get('tabName', source.get('slot', 'Fonte'))} - {source.get('sourceKindLabel', 'Fonte')}"
-                for source in analysis.get("sources", [])
-            ]
-            info_col.caption("Fontes")
-            render_badges(source_labels, "Sem fontes", info_col)
-
-            if open_col.button("Abrir", key=f"open::{analysis['id']}", use_container_width=True):
-                st.session_state["selected_analysis_id"] = analysis["id"]
-                st.session_state["selected_drilldown_key"] = None
-
-            if delete_col.button("Excluir", key=f"delete::{analysis['id']}", use_container_width=True):
-                st.session_state["analyses"] = [item for item in analyses if item["id"] != analysis["id"]]
-                st.session_state["dashboard_cache"].pop(str(analysis["id"]), None)
-                if st.session_state.get("selected_analysis_id") == analysis["id"]:
-                    st.session_state["selected_analysis_id"] = None
-                    st.session_state["selected_drilldown_key"] = None
-                st.session_state["flash"] = {
-                    "tone": "success",
-                    "message": "Analise removida da sessao atual.",
-                }
-                st.rerun()
 
 
 def render_summary_cards(summary_cards: list[dict[str, object]], key_prefix: str) -> None:
@@ -581,51 +494,61 @@ def render_summary_cards(summary_cards: list[dict[str, object]], key_prefix: str
 
 def render_dashboard_panel() -> None:
     st.subheader("Dashboard")
-    analysis = get_selected_analysis()
-    if not analysis:
-        st.info("Selecione uma analise cadastrada para abrir o dashboard.")
+    current_sources = st.session_state.get("current_sources", [])
+    current_dashboard = st.session_state.get("current_dashboard")
+    current_error = st.session_state.get("current_dashboard_error")
+
+    if not current_sources and not current_dashboard and not current_error:
+        st.info("Informe os links e clique em Gerar Analise para montar o dashboard.")
         return
 
-    title_col, action_col = st.columns([5, 1])
-    title_col.markdown(f"**{analysis.get('databaseName', 'Dashboard de monitoracao')}**")
-    title_col.caption(analysis.get("monitoringLabel", "Monitoracao"))
-    refresh_clicked = action_col.button("Atualizar", key=f"refresh::{analysis['id']}", use_container_width=True)
+    header_col, action_col = st.columns([5, 1])
+    if current_dashboard:
+        header_col.markdown(f"**{current_dashboard.get('databaseName', 'Dashboard de monitoracao')}**")
+        header_col.caption(current_dashboard.get("monitoringType", {}).get("label", "Monitoracao"))
+    else:
+        header_col.markdown("**Dashboard de monitoracao**")
+        header_col.caption("Ultima tentativa de geracao")
 
-    dashboard_record = load_dashboard_record(analysis, force_refresh=refresh_clicked)
-    if dashboard_record.get("error"):
-        st.error(str(dashboard_record["error"]))
+    refresh_clicked = action_col.button("Recarregar", key="refresh-dashboard", use_container_width=True)
+    if refresh_clicked and current_sources:
+        load_dashboard_data(current_sources)
+        current_dashboard = st.session_state.get("current_dashboard")
+        current_error = st.session_state.get("current_dashboard_error")
+
+    if current_error:
+        st.error(str(current_error))
         return
 
-    data = dashboard_record.get("data")
-    if not data:
+    if not current_dashboard:
         st.info("Nenhum dado foi retornado para esta analise.")
         return
 
-    st.caption(f"Ultima atualizacao: {dashboard_record.get('loadedAt', '--:--')}")
+    st.caption(f"Ultima atualizacao: {st.session_state.get('current_dashboard_loaded_at', '--:--')}")
 
     source_labels = [
         f"{source.get('tabName', source.get('slot', 'Fonte'))} - {source.get('sourceKind', {}).get('label', source.get('sourceKindLabel', 'Fonte'))}"
-        for source in data.get("sources", [])
+        for source in current_dashboard.get("sources", [])
     ]
     st.caption("Fontes vinculadas")
     render_badges(source_labels, "Sem fontes")
 
     st.caption("Rodovias")
-    render_badges(data.get("roads", []), "Sem rodovias")
+    render_badges(current_dashboard.get("roads", []), "Sem rodovias")
 
-    for issue in data.get("issues", []):
+    for issue in current_dashboard.get("issues", []):
         st.warning(str(issue))
 
-    render_summary_cards(data.get("summaryCards", []), f"dashboard::{analysis['id']}")
+    render_summary_cards(current_dashboard.get("summaryCards", []), "dashboard")
 
-    for index, section in enumerate(data.get("sections", [])):
+    for index, section in enumerate(current_dashboard.get("sections", [])):
         section_title = str(section.get("title", "Secao"))
         meta = build_section_meta(section)
         expander_title = f"{section_title} ({meta})" if meta else section_title
         with st.expander(expander_title, expanded=False):
-            render_section_body(section, f"dashboard::{analysis['id']}::section::{index}")
+            render_section_body(section, f"dashboard::section::{index}")
 
-    render_drilldown(data)
+    render_drilldown(current_dashboard)
 
 
 def main() -> None:
@@ -634,16 +557,14 @@ def main() -> None:
     initialize_state()
 
     st.title("Painel de Gestao")
-    st.caption("Cadastro e leitura de analises de monitoracao com dashboard consolidado para Sinalizacao Vertical.")
-    st.info("As analises ficam salvas na sessao atual do navegador. Para compartilhar, publique este repositorio no GitHub e abra pelo Streamlit Community Cloud.")
+    st.caption("Leitura de analises de monitoracao com dashboard consolidado para Sinalizacao Vertical.")
+    st.info("O app nao salva analises no Streamlit. Ele usa os links informados para gerar o dashboard atual. Ao recarregar a pagina, o fluxo comeca novamente.")
     render_flash()
 
     left_col, right_col = st.columns([1, 1.2], gap="large")
 
     with left_col:
         render_analysis_form()
-        st.divider()
-        render_analyses_list()
 
     with right_col:
         render_dashboard_panel()
