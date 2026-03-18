@@ -73,7 +73,6 @@ def inject_styles() -> None:
 
 def initialize_state() -> None:
     defaults = {
-        "selected_drilldown_key": None,
         "draft_previews": {},
         "draft_errors": {},
         "current_sources": [],
@@ -245,7 +244,6 @@ def load_dashboard_data(sources: list[dict[str, object]]) -> None:
     }
 
     st.session_state["current_sources"] = sources
-    st.session_state["selected_drilldown_key"] = None
 
     try:
         with st.spinner("Montando dashboard..."):
@@ -267,7 +265,6 @@ def clear_current_dashboard() -> None:
     st.session_state["current_dashboard"] = None
     st.session_state["current_dashboard_error"] = None
     st.session_state["current_dashboard_loaded_at"] = None
-    st.session_state["selected_drilldown_key"] = None
 
 
 def build_section_meta(section: dict[str, object]) -> str:
@@ -287,90 +284,8 @@ def build_section_meta(section: dict[str, object]) -> str:
     return ""
 
 
-def render_metric_list(items: list[dict[str, object]], key_prefix: str) -> None:
-    if not items:
-        st.info("Nenhum registro encontrado.")
-        return
-
-    for index, item in enumerate(items):
-        row = st.container()
-        label_col, value_col, action_col = row.columns([6, 1.4, 1.2])
-
-        label_col.markdown(f"**{item.get('label', 'Sem rotulo')}**")
-        for detail in item.get("details", []):
-            if detail:
-                label_col.caption(str(detail))
-
-        value = item.get("valueFormatted") or str(item.get("value", 0))
-        value_col.markdown(f"<div class='pg-count'>{escape(str(value))}</div>", unsafe_allow_html=True)
-
-        drilldown_key = item.get("drilldownKey")
-        if drilldown_key and action_col.button("Fichas", key=f"{key_prefix}::{index}::{drilldown_key}", use_container_width=True):
-            st.session_state["selected_drilldown_key"] = drilldown_key
-
-        if index < len(items) - 1:
-            st.divider()
-
-
-def render_grouped_list(groups: list[dict[str, object]], empty_message: str | None, key_prefix: str) -> None:
-    if not groups:
-        st.info(empty_message or "Nenhum dado disponivel.")
-        return
-
-    for index, group in enumerate(groups):
-        group_items = group.get("items", [])
-        total = sum(int(item.get("value", 0)) for item in group_items if isinstance(item, dict))
-        with st.container(border=True):
-            st.markdown(f"**{group.get('group', 'Grupo')}**")
-            st.caption(f"{total} placa" if total == 1 else f"{total} placas")
-            render_metric_list(group_items, f"{key_prefix}::group::{index}")
-
-
-def render_subsections(subsections: list[dict[str, object]], key_prefix: str) -> None:
-    if not subsections:
-        st.info("Nenhum subitem disponivel.")
-        return
-
-    for index, subsection in enumerate(subsections):
-        if index:
-            st.divider()
-        st.markdown(f"#### {subsection.get('title', 'Subitem')}")
-        render_section_body(subsection, f"{key_prefix}::sub::{index}")
-
-
-def render_section_body(section: dict[str, object], key_prefix: str) -> None:
-    section_type = section.get("type")
-    if section_type == "list":
-        render_metric_list(section.get("items", []), key_prefix)
-        return
-    if section_type == "grouped-list":
-        render_grouped_list(section.get("groups", []), section.get("emptyMessage"), key_prefix)
-        return
-    if section_type == "subsections":
-        render_subsections(section.get("subsections", []), key_prefix)
-        return
-    st.info("Tipo de secao nao suportado.")
-
-
-def render_drilldown(data: dict[str, object]) -> None:
-    selected_drilldown_key = st.session_state.get("selected_drilldown_key")
-    if not selected_drilldown_key:
-        return
-
-    drilldowns = data.get("drilldowns", {})
-    drilldown = drilldowns.get(selected_drilldown_key)
-    if not drilldown:
-        st.session_state["selected_drilldown_key"] = None
-        return
-
-    st.markdown("### Detalhamento")
-    top_col, close_col = st.columns([5, 1])
-    top_col.markdown(f"**{drilldown.get('title', 'Detalhamento')}**")
-    top_col.caption(f"Total: {drilldown.get('total', 0)}")
-    if close_col.button("Fechar", key=f"close::{selected_drilldown_key}", use_container_width=True):
-        st.session_state["selected_drilldown_key"] = None
-        st.rerun()
-
+def render_drilldown_groups(drilldown: dict[str, object]) -> None:
+    st.caption(f"Total: {drilldown.get('total', 0)}")
     groups = drilldown.get("groups", [])
     if not groups:
         st.info("Sem fichas para exibir.")
@@ -381,6 +296,78 @@ def render_drilldown(data: dict[str, object]) -> None:
             st.markdown(f"**{group.get('uf', 'Sem UF')}**")
             for item in group.get("items", []):
                 st.write(str(item))
+
+
+def render_metric_list(items: list[dict[str, object]], drilldowns: dict[str, dict[str, object]], key_prefix: str) -> None:
+    if not items:
+        st.info("Nenhum registro encontrado.")
+        return
+
+    for index, item in enumerate(items):
+        row = st.container()
+        label_col, value_col = row.columns([6, 1.4])
+
+        label_col.markdown(f"**{item.get('label', 'Sem rotulo')}**")
+        for detail in item.get("details", []):
+            if detail:
+                label_col.caption(str(detail))
+
+        value = item.get("valueFormatted") or str(item.get("value", 0))
+        value_col.markdown(f"<div class='pg-count'>{escape(str(value))}</div>", unsafe_allow_html=True)
+
+        drilldown_key = item.get("drilldownKey")
+        drilldown = drilldowns.get(drilldown_key) if drilldown_key else None
+        if drilldown:
+            with row.expander(f"Fichas: {item.get('label', 'Detalhamento')}", expanded=False):
+                render_drilldown_groups(drilldown)
+
+        if index < len(items) - 1:
+            st.divider()
+
+
+def render_grouped_list(
+    groups: list[dict[str, object]],
+    drilldowns: dict[str, dict[str, object]],
+    empty_message: str | None,
+    key_prefix: str,
+) -> None:
+    if not groups:
+        st.info(empty_message or "Nenhum dado disponivel.")
+        return
+
+    for index, group in enumerate(groups):
+        group_items = group.get("items", [])
+        total = sum(int(item.get("value", 0)) for item in group_items if isinstance(item, dict))
+        with st.container(border=True):
+            st.markdown(f"**{group.get('group', 'Grupo')}**")
+            st.caption(f"{total} placa" if total == 1 else f"{total} placas")
+            render_metric_list(group_items, drilldowns, f"{key_prefix}::group::{index}")
+
+
+def render_subsections(subsections: list[dict[str, object]], drilldowns: dict[str, dict[str, object]], key_prefix: str) -> None:
+    if not subsections:
+        st.info("Nenhum subitem disponivel.")
+        return
+
+    for index, subsection in enumerate(subsections):
+        if index:
+            st.divider()
+        st.markdown(f"#### {subsection.get('title', 'Subitem')}")
+        render_section_body(subsection, drilldowns, f"{key_prefix}::sub::{index}")
+
+
+def render_section_body(section: dict[str, object], drilldowns: dict[str, dict[str, object]], key_prefix: str) -> None:
+    section_type = section.get("type")
+    if section_type == "list":
+        render_metric_list(section.get("items", []), drilldowns, key_prefix)
+        return
+    if section_type == "grouped-list":
+        render_grouped_list(section.get("groups", []), drilldowns, section.get("emptyMessage"), key_prefix)
+        return
+    if section_type == "subsections":
+        render_subsections(section.get("subsections", []), drilldowns, key_prefix)
+        return
+    st.info("Tipo de secao nao suportado.")
 
 
 def render_source_preview_blocks() -> None:
@@ -479,7 +466,11 @@ def render_analysis_form() -> None:
     render_source_preview_blocks()
 
 
-def render_summary_cards(summary_cards: list[dict[str, object]], key_prefix: str) -> None:
+def render_summary_cards(
+    summary_cards: list[dict[str, object]],
+    drilldowns: dict[str, dict[str, object]],
+    key_prefix: str,
+) -> None:
     if not summary_cards:
         return
 
@@ -488,8 +479,10 @@ def render_summary_cards(summary_cards: list[dict[str, object]], key_prefix: str
         with columns[index]:
             st.metric(str(item.get("label", "Resumo")), str(item.get("valueFormatted", item.get("value", 0))))
             drilldown_key = item.get("drilldownKey")
-            if drilldown_key and st.button("Ver fichas", key=f"{key_prefix}::summary::{index}", use_container_width=True):
-                st.session_state["selected_drilldown_key"] = drilldown_key
+            drilldown = drilldowns.get(drilldown_key) if drilldown_key else None
+            if drilldown:
+                with st.expander("Fichas", expanded=False):
+                    render_drilldown_groups(drilldown)
 
 
 def render_dashboard_panel() -> None:
@@ -539,16 +532,15 @@ def render_dashboard_panel() -> None:
     for issue in current_dashboard.get("issues", []):
         st.warning(str(issue))
 
-    render_summary_cards(current_dashboard.get("summaryCards", []), "dashboard")
+    drilldowns = current_dashboard.get("drilldowns", {})
+    render_summary_cards(current_dashboard.get("summaryCards", []), drilldowns, "dashboard")
 
     for index, section in enumerate(current_dashboard.get("sections", [])):
         section_title = str(section.get("title", "Secao"))
         meta = build_section_meta(section)
         expander_title = f"{section_title} ({meta})" if meta else section_title
         with st.expander(expander_title, expanded=False):
-            render_section_body(section, f"dashboard::section::{index}")
-
-    render_drilldown(current_dashboard)
+            render_section_body(section, drilldowns, f"dashboard::section::{index}")
 
 
 def main() -> None:
