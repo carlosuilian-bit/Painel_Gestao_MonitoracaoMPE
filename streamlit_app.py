@@ -87,6 +87,7 @@ def initialize_state() -> None:
         "selected_drilldown_key": None,
         "draft_previews": {},
         "draft_errors": {},
+        "reset_form_inputs": False,
         "flash": None,
     }
     for key, value in defaults.items():
@@ -264,8 +265,16 @@ def build_analysis_record(
 def clear_draft() -> None:
     st.session_state["draft_previews"] = {}
     st.session_state["draft_errors"] = {}
+    st.session_state["reset_form_inputs"] = True
+
+
+def apply_pending_form_reset() -> None:
+    if not st.session_state.get("reset_form_inputs"):
+        return
+
     for slot in SOURCE_SLOTS:
-        st.session_state[input_key(slot["slot"])] = ""
+        st.session_state.pop(input_key(slot["slot"]), None)
+    st.session_state["reset_form_inputs"] = False
 
 
 def get_selected_analysis() -> dict[str, object] | None:
@@ -463,6 +472,7 @@ def render_source_preview_blocks() -> None:
 
 
 def render_analysis_form() -> None:
+    apply_pending_form_reset()
     st.subheader("Cadastrar monitoracao")
     st.caption("Para Sinalizacao Vertical, informe o Link Principal e pelo menos uma fonte do tipo Medicao.")
 
