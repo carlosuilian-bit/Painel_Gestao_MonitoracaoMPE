@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard de Analise</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-backdrop"></div>
+    <main class="app-shell app-shell--dashboard">
+      <header class="hero hero--compact">
+        <div>
+          <p class="eyebrow">Dashboard</p>
+          <h1 id="dashboard-title">Carregando analise...</h1>
+          <p class="hero-copy" id="dashboard-subtitle">Aguarde enquanto os dados sao consolidados.</p>
+        </div>
+        <div class="hero-meta hero-meta--stack">
+          <button class="action-button secondary" id="back-button" type="button">Voltar</button>
+          <button class="action-button primary" id="refresh-button" type="button">Atualizar</button>
+        </div>
+      </header>
+
+      <section class="panel">
+        <div class="source-strip" id="dashboard-sources"></div>
+        <div class="tag-list" id="dashboard-roads"></div>
+        <div class="issue-list" id="dashboard-issues"></div>
+        <div class="status" id="dashboard-status">Carregando dashboard...</div>
+        <div class="accordion-stack" id="dashboard-content"></div>
+      </section>
+    </main>
+
+    <dialog class="analysis-dialog" id="drilldown-dialog">
+      <div class="dialog-card">
+        <div class="dialog-header">
+          <div>
+            <p class="section-label">Detalhamento</p>
+            <h2 id="drilldown-title">-</h2>
+          </div>
+          <button class="icon-button" id="close-drilldown-button" type="button" aria-label="Fechar">x</button>
+        </div>
+        <div class="status status--compact" id="drilldown-total">-</div>
+        <div class="drilldown-groups" id="drilldown-groups"></div>
+      </div>
+    </dialog>
+
+    <script type="module" src="./dashboard.js"></script>
+  </body>
+</html>

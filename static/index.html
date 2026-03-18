@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Painel de Gestao</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-backdrop"></div>
+    <main class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Painel de Gestao</p>
+          <h1>Analises de monitoracao</h1>
+          <p class="hero-copy">
+            Cadastre as fontes da analise e clique em um item da lista para abrir o dashboard completo.
+          </p>
+        </div>
+        <div class="hero-meta">
+          <span class="meta-label">Fluxo atual</span>
+          <strong>Sinalizacao Vertical</strong>
+        </div>
+      </header>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="section-label">Analises cadastradas</p>
+            <h2>Lista de configuracoes</h2>
+          </div>
+          <span class="counter" id="analysis-counter">0 analises</span>
+        </div>
+
+        <div class="analysis-list" id="analysis-list" aria-live="polite"></div>
+
+        <div class="actions">
+          <button class="action-button primary" id="add-analysis-button" type="button">Adicionar Analise</button>
+          <button class="action-button danger" id="delete-analysis-button" type="button" disabled>
+            Excluir Analise
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <dialog class="analysis-dialog" id="analysis-dialog">
+      <form class="dialog-card dialog-card--wide" id="analysis-form" method="dialog">
+        <div class="dialog-header">
+          <div>
+            <p class="section-label">Nova analise</p>
+            <h2>Cadastrar monitoracao</h2>
+          </div>
+          <button class="icon-button" id="close-dialog-button" type="button" aria-label="Fechar">x</button>
+        </div>
+
+        <div class="source-stack">
+          <section class="source-slot" data-slot="primary">
+            <div class="source-slot-header">
+              <div>
+                <p class="section-label">Fonte obrigatoria</p>
+                <h3>Link Principal</h3>
+              </div>
+            </div>
+            <label class="field">
+              <span>Link da fonte principal</span>
+              <input
+                data-slot-input="primary"
+                type="url"
+                inputmode="url"
+                autocomplete="off"
+                placeholder="Cole o link principal da analise"
+                required
+              />
+            </label>
+            <p class="helper-text">Essa fonte define o tipo de monitoracao e a base principal da analise.</p>
+            <div class="status" data-slot-status="primary">
+              Informe o link principal para iniciar a identificacao automatica.
+            </div>
+            <section class="preview-card source-preview" data-slot-preview="primary" hidden>
+              <div class="preview-grid preview-grid--source">
+                <div>
+                  <span class="preview-label">Banco identificado</span>
+                  <strong data-slot-database="primary">-</strong>
+                </div>
+                <div>
+                  <span class="preview-label">Aba detectada</span>
+                  <strong data-slot-tab="primary">-</strong>
+                </div>
+                <div>
+                  <span class="preview-label">Tipo da fonte</span>
+                  <strong data-slot-kind="primary">-</strong>
+                </div>
+                <div>
+                  <span class="preview-label">Monitoracao</span>
+                  <strong data-slot-monitoring="primary">-</strong>
+                </div>
+                <div>
+                  <span class="preview-label">Rodovias</span>
+                  <div class="tag-list" data-slot-roads="primary"></div>
+                </div>
+                <div>
+                  <span class="preview-label">Registros validos</span>
+                  <strong data-slot-rows="primary">-</strong>
+                </div>
+              </div>
+            </section>
+          </section>
+
+          <section class="source-slot" data-slot="additional-1" hidden>
+            <div class="source-slot-header">
+              <div>
+                <p class="section-label">Fonte adicional</p>
+                <h3>Link Adicional 1</h3>
+              </div>
+              <button class="text-button" data-slot-remove="additional-1" type="button">Remover</button>
+            </div>
+            <label class="field">
+              <span>Link adicional</span>
+              <input
+                data-slot-input="additional-1"
+                type="url"
+                inputmode="url"
+                autocomplete="off"
+                placeholder="Cole um link adicional"
+              />
+            </label>
+            <p class="helper-text">Use para vincular fontes como a aba de Medicao ou outra planilha auxiliar.</p>
+            <div class="status" data-slot-status="additional-1">
+              Cole um link adicional para identificar a fonte.
+            </div>
+            <section class="preview-card source-preview" data-slot-preview="additional-1" hidden>
+              <div class="preview-grid preview-grid--source">
+                <div>
+                  <span class="preview-label">Banco identificado</span>
+                  <strong data-slot-database="additional-1">-</strong>
+                </div>
+                <div>
+                  <span class="preview-label">Aba detectada</span>
+                  <strong data-slot-tab="additional-1">-</strong>
+                </div>
+                <div>
+                  <span class="preview-label">Tipo da fonte</span>
+                  <strong data-slot-kind="additional-1">-</strong>
+                </div>
+                <div>
+                  <span class="preview-label">Monitoracao relacionada</span>
+                  <strong data-slot-monitoring="additional-1">-</strong>
+                </div>
+                <div>
+                  <span class="preview-label">Rodovias</span>
+                  <div class="tag-list" data-slot-roads="additional-1"></div>
+                </div>
+                <div>
+                  <span class="preview-label">Registros validos</span>
+                  <strong data-slot-rows="additional-1">-</strong>
+                </div>
+              </div>
+            </section>
+          </section>
+
+          <section class="source-slot" data-slot="additional-2" hidden>
+            <div class="source-slot-header">
+              <div>
+                <p class="section-label">Fonte adicional</p>
+                <h3>Link Adicional 2</h3>
+              </div>
+              <button class="text-button" data-slot-remove="additional-2" type="button">Remover</button>
+            </div>
+            <label class="field">
+              <span>Link adicional</span>
+              <input
+                data-slot-input="additional-2"
+                type="url"
+                inputmode="url"
+                autocomplete="off"
+                placeholder="Cole um segundo link adicional"
+              />
+            </label>
+            <p class="helper-text">Opcional. Pode ser usado para uma segunda fonte complementar.</p>
+            <div class="status" data-slot-status="additional-2">
+              Cole um link adicional para identificar a fonte.
+            </div>
+            <section class="preview-card source-preview" data-slot-preview="additional-2" hidden>
+              <div class="preview-grid preview-grid--source">
+                <div>
+                  <span class="preview-label">Banco identificado</span>
+                  <strong data-slot-database="additional-2">-</strong>
+                </div>
+                <div>
+                  <span class="preview-label">Aba detectada</span>
+                  <strong data-slot-tab="additional-2">-</strong>
+                </div>
+                <div>
+                  <span class="preview-label">Tipo da fonte</span>
+                  <strong data-slot-kind="additional-2">-</strong>
+                </div>
+                <div>
+                  <span class="preview-label">Monitoracao relacionada</span>
+                  <strong data-slot-monitoring="additional-2">-</strong>
+                </div>
+                <div>
+                  <span class="preview-label">Rodovias</span>
+                  <div class="tag-list" data-slot-roads="additional-2"></div>
+                </div>
+                <div>
+                  <span class="preview-label">Registros validos</span>
+                  <strong data-slot-rows="additional-2">-</strong>
+                </div>
+              </div>
+            </section>
+          </section>
+        </div>
+
+        <button class="action-button secondary add-source-button" id="add-source-button" type="button">
+          Adicionar Link Adicional
+        </button>
+
+        <div class="status" id="form-status">
+          Confirme as fontes identificadas antes de salvar a analise.
+        </div>
+
+        <div class="dialog-actions">
+          <button class="action-button secondary" id="cancel-dialog-button" type="button">Cancelar</button>
+          <button class="action-button primary" id="confirm-analysis-button" type="submit" disabled>OK</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="analysis-dialog" id="delete-dialog">
+      <form class="dialog-card" id="delete-form" method="dialog">
+        <div class="dialog-header">
+          <div>
+            <p class="section-label">Excluir analises</p>
+            <h2>Selecione o que remover</h2>
+          </div>
+          <button class="icon-button" id="close-delete-dialog-button" type="button" aria-label="Fechar">x</button>
+        </div>
+
+        <div class="checkbox-list" id="delete-list"></div>
+
+        <div class="dialog-actions">
+          <button class="action-button secondary" id="cancel-delete-button" type="button">Cancelar</button>
+          <button class="action-button danger" id="confirm-delete-button" type="submit" disabled>Excluir Selecionadas</button>
+        </div>
+      </form>
+    </dialog>
+
+    <template id="analysis-item-template">
+      <article class="analysis-card analysis-card--link" tabindex="0">
+        <div class="analysis-topline">
+          <span class="analysis-type"></span>
+          <span class="analysis-date"></span>
+        </div>
+        <h3 class="analysis-name"></h3>
+        <p class="analysis-link"></p>
+        <div class="tag-list analysis-roads"></div>
+        <div class="source-strip source-strip--compact analysis-sources"></div>
+      </article>
+    </template>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
